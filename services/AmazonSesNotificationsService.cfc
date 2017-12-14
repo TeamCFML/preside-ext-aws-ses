@@ -5,6 +5,8 @@
  */
 component {
 
+	property name="dumplogservice" inject="dumplogservice";
+
 	NL = server.separator.line;
 
 	/**
@@ -31,7 +33,6 @@ component {
 		}
 
 		// replacement needed as for whatever reason some weird chars are returned from SNS
-		content = replaceList( content, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
 		content = replace( content, "}=", "}", "all" );
 		content = replace( content, "{=", "{", "all" );
 		content = replace( content, '",=', '",', "all" );
@@ -56,6 +57,8 @@ component {
 		var signingCertURL   = arguments.message.SigningCertURL   ?: "";
 		var signature        = arguments.message.Signature        ?: "";
 
+		dumplogservice.dumplog( ses="isMessageSignatureValid", signatureVersion=signatureVersion, signingCertURL=signingCertURL, signature=signature );
+
 		if ( signatureVersion != "1" || isEmpty( signingCertURL ) || isEmpty( signature ) ) {
 			return false;
 		}
@@ -75,13 +78,21 @@ component {
 
 	        sig.initVerify( cert.getPublicKey() );
 
-	        sig.update( _getMessageBytesToSign( arguments.message ) );
+	        var messageBytesToSign = _getMessageBytesToSign( arguments.message );
+
+	        sig.update( messageBytesToSign );
 
 	        var Base64 = createObject( "java", "java.util.Base64" );
+	        var decodedSignature = Base64.getDecoder().decode( signature );
+	        
+			var result = sig.verify( decodedSignature );
 
-	        return sig.verify( Base64.getDecoder().decode( signature ) );
+			dumplogservice.dumplog( ses="isMessageSignatureValid", decodedSignature=decodedSignature, result=result, messageBytesToSign=messageBytesToSign );
+
+	        return result;
 	    }
 	    catch ( any e ) {
+	    	dumplogservice.dumplog(ses="isMessageSignatureValid", error=e);
 	    	rethrow;
 	    }
 	    return false;
@@ -91,6 +102,7 @@ component {
 
 		// the message content within the SNS wrapper message is again JSON serialized
 		if ( arguments.message.keyExists( "Message" ) && isJSON( arguments.message.Message ) ) {
+			arguments.message.Message = replaceList( arguments.message.Message, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
 			return deserializeJSON( arguments.message.Message );
 		}
 
@@ -132,6 +144,7 @@ component {
 		var subscribeURL = trim( arguments.message.SubscribeURL ?: "" );
 
 		if ( len( subscribeURL ) ) {
+			subscribeURL = replaceList( subscribeURL, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
 			var httpService = new http(
 	              method  = "get"
 	            , url     = subscribeURL
