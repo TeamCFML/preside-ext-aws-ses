@@ -4,7 +4,7 @@ component {
 
 	public void function index( event, rc, prc ) {
 
-		dumplog( amazonses="hooks", rc=rc, prc=prc, form=form, url=url );
+		dumplog( amazonses="hooks", r=getHTTPRequestData() );
 		return;
 
 		// deliberate use of form scope here. DO NOT CHANGE.
