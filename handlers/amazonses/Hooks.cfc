@@ -7,11 +7,32 @@ component {
 		var data = getHTTPRequestData();
 		var content = data.content ?: "";
 		var headers = data.headers ?: {};
+
+		var messageType = headers[ "x-amz-sns-message-type" ] ?: "";
+
+		if ( isEmpty( messageType ) ) {
+		//	return;
+		}
+
+		if ( messageType == "SubscriptionConfirmation" ) {
+
+			//return;
+		}
+
+		if ( messageType == "Notification" ) {
+
+		}
+
 		if ( isJSON( content ) ) {
 			content = deserializeJSON( content );
 		}
-		dumplog( amazonses="hooks", content=content, headers=headers );
-		return;
+
+		var decodedData = amazonSesNotificationsService.decodeMessage( data );
+		dumplog( amazonses="hooks", content=content, headers=headers, decodedData=decodedData );
+
+		event.renderData( type="text", data="Notification of event received and processed", statuscode=200 );
+
+		// TODO: also deal with subscribe notification
 
 		// deliberate use of form scope here. DO NOT CHANGE.
 		// this is because 'event' is overridden in rc scope by coldbox
