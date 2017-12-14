@@ -5,6 +5,8 @@
  */
 component {
 
+	property name="dumplogservice" inject="dumplogservice";
+
 	/**
 	 * @emailServiceProviderService.inject emailServiceProviderService
 	 * @emailLoggingService.inject         emailLoggingService
@@ -16,11 +18,40 @@ component {
 	) {
 		_setEmailServiceProviderService( arguments.emailServiceProviderService );
 		_setEmailLoggingService( arguments.emailLoggingService );
+		
+		var jarPaths   = DirectoryList( ExpandPath( "/app/extensions/preside-ext-aws-ses/externals/lib" ) );
+        var javaloader = CreateObject( "javaloader.Javaloader" ).init( loadPaths=jarPaths, loadColdFusionClassPath=true, trustedSource=true );
+        _setJavaloader( javaloader );
 
 		return this;
 	}
 
 // PUBLIC API METHODS
+	public struct function decodeMessage( required any requestData ) {
+
+    	try {
+
+			var content = arguments.requestData.content ?: "";
+			var headers = arguments.requestData.headers ?: {};
+
+			var result = { full=arguments.requestData, originalcontent=content, headers=headers };
+
+			result.luceejsoncontent = isJSON( content ) ? deserializeJSON( content ) : "";
+
+			result.contentbytes = content.getBytes();
+
+			var objectMapper = _getJavaLoader().create( "com.fasterxml.jackson.databind.ObjectMapper" ).init();
+	    	var Map = createObject( "java", "java.util.Map" );
+
+		    result.parsed = objectMapper.readValue( result.contentbytes, Map.getClass() );
+		} catch ( any e ) {
+			dumplogservice.dumplog(e=e, result=result);
+		}
+
+		return result;
+	}
+
+
 	public boolean function processNotification( required string messageId, required string messageEvent, struct postData={} ){
 		var loggingService = _getEmailLoggingService();
 
@@ -171,5 +202,12 @@ component {
 	}
 	private void function _setEmailLoggingService( required any emailLoggingService ) {
 		_emailLoggingService = arguments.emailLoggingService;
+	}
+
+	private any function _getJavaLoader() {
+		return _javaLoader;
+	}
+	private void function _setJavaLoader( required any javaLoader ) {
+		_javaLoader = arguments.javaLoader;
 	}
 }
