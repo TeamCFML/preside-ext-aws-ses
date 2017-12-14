@@ -1,8 +1,8 @@
 {
     "name":"PresideCMS Extension: AWS SES",
     "type":"preside-extensions",
-    "version":"0.2.4",
-    "location":"https://github.com/pixl8/preside-ext-aws-ses/archive/v0.2.4.zip",
+    "version":"0.2.5",
+    "location":"https://github.com/pixl8/preside-ext-aws-ses/archive/v0.2.5.zip",
     "author":"Pixl8 Interactive",
     "directory":"application/extensions",
     "homepage":"https://github.com/pixl8/preside-ext-aws-ses",
