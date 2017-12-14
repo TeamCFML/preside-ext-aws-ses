@@ -1,5 +1,7 @@
 component {
 
+	VALID_MESSAGE_TYPES = [ "Notification", "SubscriptionConfirmation" ];
+
 	property name="amazonSesNotificationsService" inject="amazonSesNotificationsService";
 
 	public void function index( event, rc, prc ) {
@@ -10,67 +12,61 @@ component {
 
 		var messageType = headers[ "x-amz-sns-message-type" ] ?: "";
 
+		dumplog( messageType=messageType );
+
 		if ( isEmpty( messageType ) ) {
-		//	return;
+			event.renderData( type="text", data="Not acceptable: empty message type", statusCode=406 );
+			dumplog( hookerror="Not acceptable: empty message type" );
+		 	return;
 		}
 
-		if ( messageType == "SubscriptionConfirmation" ) {
+		if ( !VALID_MESSAGE_TYPES.findNoCase( messageType ) ) {
+			event.renderData( type="text", data="Not acceptable: unknown message type '#messageType#'", statusCode=406 );
+			dumplog( hookerror="Not acceptable: unknown message type '#messageType#'" );
+		 	return;
+		}
 
-			//return;
+		var message = amazonSesNotificationsService.parseMessage( data.content ?: "" );
+
+		dumplog( message=message );
+
+		if ( isEmpty( message ) ) {
+			event.renderData( type="text", data="Not acceptable: empty or not parsable message content", statusCode=406 );
+			dumplog( hookerror="Not acceptable: empty or not parsable message content" );
+		 	return;
+		}
+
+		if ( !amazonSesNotificationsService.isMessageSignatureValid( message ) ) {
+			event.renderData( type="text", data="Not acceptable: invalid message signature", statusCode=406 );
+			dumplog( hookerror="Not acceptable: invalid message signature" );
+		 	return;
 		}
 
 		if ( messageType == "Notification" ) {
+			var notification = amazonSesNotificationsService.parseNotification( message );
+			dumplog( notification=notification );
+			var presideMessageId = amazonSesNotificationsService.getPresideMessageId( notification );
+			dumplog( presideMessageId=presideMessageId );
 
-		}
-
-		content = replaceList( content, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
-		content = replace( content, "}=", "}", "all" );
-		content = replace( content, "{=", "{", "all" );
-		content = replace( content, '",=', '",', "all" );
-		content = replace( content, '"=', '"', "all" );
-
-		var deserializedContent = "";
-
-		if ( isJSON( content ) ) {
-			deserializedContent = deserializeJSON( content );
-		}
-
-		//var decodedData = amazonSesNotificationsService.decodeMessage( getPageContext() );
-		dumplog( amazonses="hooks", content=content, headers=headers, messageType=messageType, deserializedContent=deserializedContent );
-
-		event.renderData( type="text", data="Notification of event received and processed", statuscode=200 );
-
-		// TODO: also deal with subscribe notification
-
-		// deliberate use of form scope here. DO NOT CHANGE.
-		// this is because 'event' is overridden in rc scope by coldbox
-		/*
-		var validRequest = amazonSesNotificationsService.validatePostHookSignature(
-			  timestamp = Val( form.timestamp ?: "" )
-			, token     = form.token     ?: ""
-			, signature = form.signature ?: ""
-		);
-
-		if ( validRequest ) {
-			var presideMessageId = amazonSesNotificationsService.getPresideMessageIdForNotification( form );
-
-			if ( presideMessageId.trim().len() ) {
-				var messageEvent = form.event ?: "";
-				amazonSesNotificationsService.processNotification(
-					  messageId    = presideMessageId
-					, messageEvent = messageEvent
-					, postData     = form
-				);
-				event.renderData( type="text", data="Notification of [#messageEvent#] event received and processed for preside message [#presideMessageId#]", statuscode=200 );
-			} else {
+			if ( isEmpty( presideMessageId ) ) {
 				event.renderData( type="text", data="Not acceptable: could not identify source preside message", statusCode=406 );
+				dumplog( hookerror="Not acceptable: could not identify source preside message" );
+				return;
 			}
-		} else {
-			event.renderData( type="text", data="Not acceptable: invalid request signature", statusCode=406 );
-		}*/
 
+			amazonSesNotificationsService.processNotification(
+				  messageId    = presideMessageId
+				, notification = notification
+			);
 
-
+			event.renderData( type="text", data="Notification received and processed for preside message [#presideMessageId#]", statuscode=200 );
+			dumplog( hooksuccess="Notification received and processed for preside message [#presideMessageId#]" );
+		}
+		else {
+			// messageType == "SubscriptionConfirmation"
+			amazonSesNotificationsService.confirmSubscription( message );
+			event.renderData( type="text", data="Notification subscription confirmed.", statuscode=200 );
+			dumplog( hooksuccess="Notification subscription confirmed." );
+		}
 	}
-
 }

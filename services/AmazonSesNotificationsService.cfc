@@ -5,12 +5,11 @@
  */
 component {
 
-	property name="dumplogservice" inject="dumplogservice";
+	NL = server.separator.line;
 
 	/**
 	 * @emailServiceProviderService.inject emailServiceProviderService
 	 * @emailLoggingService.inject         emailLoggingService
-	 *
 	 */
 	public any function init(
 		  required any emailServiceProviderService
@@ -19,194 +18,211 @@ component {
 		_setEmailServiceProviderService( arguments.emailServiceProviderService );
 		_setEmailLoggingService( arguments.emailLoggingService );
 		
-		var jarPaths   = DirectoryList( ExpandPath( "/app/extensions/preside-ext-aws-ses/externals/lib" ) );
-        var javaloader = CreateObject( "javaloader.Javaloader" ).init( loadPaths=jarPaths, loadColdFusionClassPath=true, trustedSource=true );
-        _setJavaloader( javaloader );
-
 		return this;
 	}
 
 // PUBLIC API METHODS
-	public struct function decodeMessage( required any pc ) {
+	public struct function parseMessage( required string messageContent ) {
 
-    	try {
+		var content = arguments.messageContent;
 
-    		var result = {};
-
-			var sr = arguments.pc.getHttpServletRequest();
-
-			var scanner = createObject( "java", "java.util.Scanner" ).init( sr.getInputStream() );
-			var builder = createObject( "java", "java.lang.StringBuilder" );
-
-		    while (scanner.hasNextLine()) {
-		        builder.append(scanner.nextLine());
-		    }
-
-		    result.sbstring = builder.toString();
-
-			var bytes = createObject( "java", "java.io.ByteArrayInputStream" ).init( result.sbstring.getBytes() );
-
-			//var content = arguments.requestData.content ?: "";
-			//var headers = arguments.requestData.headers ?: {};
-
-			//var result = { full=arguments.requestData, originalcontent=content, headers=headers };
-
-			//result.luceejsoncontent = isJSON( content ) ? deserializeJSON( content ) : "";
-
-			//result.contentbytes = content.getBytes();
-
-			var objectMapper = _getJavaLoader().create( "com.fasterxml.jackson.databind.ObjectMapper" ).init();
-			var DeserializationFeature = _getJavaLoader().create( "com.fasterxml.jackson.databind.DeserializationFeature" );
-
-			objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-	    	var Map = createObject( "java", "java.util.Map" );
-
-		    result.parsed = objectMapper.readValue( bytes, Map.getClass() );
-		} catch ( any e ) {
-			dumplogservice.dumplog(e=e, result=result);
+		if ( isEmpty( content ) ) {
+			return {};
 		}
 
-		return result;
+		// replacement needed as for whatever reason some weird chars are returned from SNS
+		content = replaceList( content, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
+		content = replace( content, "}=", "}", "all" );
+		content = replace( content, "{=", "{", "all" );
+		content = replace( content, '",=', '",', "all" );
+		content = replace( content, '"=', '"', "all" );
+
+		if ( !isJSON( content ) ) {
+			return {};
+		}
+
+		var deserializedContent = deserializeJSON( content );
+
+		if ( !isStruct( deserializedContent ) ) {
+			return {};
+		}
+
+		return deserializedContent;
 	}
 
+	public boolean function isMessageSignatureValid( required struct message ) {
 
-	public boolean function processNotification( required string messageId, required string messageEvent, struct postData={} ){
+		var signatureVersion = arguments.message.SignatureVersion ?: "";
+		var signingCertURL   = arguments.message.SigningCertURL   ?: "";
+		var signature        = arguments.message.Signature        ?: "";
+
+		if ( signatureVersion != "1" || isEmpty( signingCertURL ) || isEmpty( signature ) ) {
+			return false;
+		}
+
+	    try {
+	        var javaUrl = createObject( "java", "java.net.URL" ).init( signingCertURL );
+
+	        var inStream           = javaUrl.openStream();
+	        var CertificateFactory = createObject( "java", "java.security.cert.CertificateFactory" );
+	        var cf                 = CertificateFactory.getInstance( "X.509" );
+	        var cert               = cf.generateCertificate( inStream );
+
+	        inStream.close();
+
+	        var Signature = createObject( "java", "java.security.Signature" );
+	        var sig       = Signature.getInstance( "SHA1withRSA" );
+
+	        sig.initVerify( cert.getPublicKey() );
+
+	        sig.update( _getMessageBytesToSign( arguments.message ) );
+
+	        var Base64 = createObject( "java", "java.util.Base64" );
+
+	        return sig.verify( Base64.getDecoder().decode( signature ) );
+	    }
+	    catch ( any e ) {
+	    	rethrow;
+	    }
+	    return false;
+	}
+
+	public struct function parseNotification( required struct message ) {
+
+		// the message content within the SNS wrapper message is again JSON serialized
+		if ( arguments.message.keyExists( "Message" ) && isJSON( arguments.message.Message ) ) {
+			return deserializeJSON( arguments.message.Message );
+		}
+
+		return {};
+	}
+
+	public string function getPresideMessageIdForNotification( required struct notification ) {
+
+		var mailHeaders = _parseMailHeaders( arguments.notification );
+
+		return mailHeaders[ "X-Message-ID" ] ?: "";
+	}
+
+	public boolean function processNotification( required string messageId, required struct notification ) {
+
 		var loggingService = _getEmailLoggingService();
 
-		switch( arguments.messageEvent ) {
-			case "opened":
-				loggingService.markAsOpened( id=arguments.messageId );
-			break;
-			case "delivered":
+		var notificationType = notification.notificationType ?: "";
+
+		switch( notificationType ) {
+			case "Delivery":
 				loggingService.markAsDelivered( id=arguments.messageId );
 			break;
-			case "dropped":
-				loggingService.markAsFailed(
-					  id     = arguments.messageId
-					, reason = arguments.postData.description ?: ""
-					, code   = arguments.postData.code        ?: ""
-				);
-			break;
-			case "bounced":
+			case "Bounce":
 				loggingService.markAsHardBounced(
 					  id     = arguments.messageId
-					, reason = arguments.postData.error ?: ""
-					, code   = arguments.postData.code  ?: ""
+					, reason = arguments.notification.bounce.bounceType ?: ""
 				);
 			break;
-			case "unsubscribed":
-				loggingService.markAsUnsubscribed( id=arguments.messageId );
-			break;
-			case "complained":
+			case "Complaint":
 				loggingService.markAsMarkedAsSpam( id=arguments.messageId );
-			break;
-			case "clicked":
-				loggingService.recordClick( id=arguments.messageId, link=arguments.postData.url ?: "" );
 			break;
 		}
 		return true;
 	}
 
-	public boolean function validatePostHookSignature(
-		  required numeric timestamp
-		, required string  token
-		, required string  signature
-	) {
-		var encryptionKey       = _getApiKey();
+	public void function confirmSubscription( required struct message ) {
 
-		if ( !encryptionKey.len() ) {
-			throw( type="mailgun.api.key.not.configured", message="No API key is configured for the mailgun extension. This prevents the validation of Mailgun POST hooks." );
-		}
+		var subscribeURL = trim( arguments.message.SubscribeURL ?: "" );
 
-		var encryptionData      = arguments.timestamp & arguments.token;
-		var calculatedSignature = _hexEncodedSha256( encryptionData, encryptionKey );
+		if ( len( subscribeURL ) ) {
+			var httpService = new http(
+	              method  = "get"
+	            , url     = subscribeURL
+	            , timeout = 60
+	        ); 
 
-		return arguments.signature == calculatedSignature;
-	}
-
-	public string function getPresideMessageIdForNotification( required struct postData ) {
-		var messageId = postData.presideMessageId ?: "";
-
-		if ( Len( Trim( messageId ) ) ) {
-			return messageId;
-		}
-
-		var messageHeaders = parseMessageHeaders( arguments.postData[ "message-headers" ] ?: "" );
-		return messageHeaders[ "X-Message-ID" ] ?: "";
-	}
-
-	public struct function parseMessageHeaders( required string headers ) {
-		var parsed = {};
-		var deserializedHeaders = [];
-		var parseItemValue = function( value ) {
-			if ( IsSimpleValue( value ) ) {
-				return value;
-			}
-			if ( IsArray( value ) && value.len() == 2 ) {
-				return {
-					"#value[1]#" = parseItemValue( value[2] )
-				};
-			}
-
-			return value;
-		}
-
-		try {
-			deserializedHeaders = DeserializeJson( arguments.headers )
-			for( var item in deserializedHeaders ) {
-				parsed[ item[1] ] = parseItemValue( item[ 2 ] );
-			}
-		} catch( any e ) {
-			deserializedHeaders = [];
-		}
-
-		return parsed;
+	        var httpResult = httpService.send().getPrefix();
+        }
 	}
 
 // PRIVATE HELPERS
-	private string function _getApiKey(){
-		return _getSettings().mailgun_api_key;
-	}
+    private struct function _parseMailHeaders( required struct notification ) {
+		
+		var mail    = notification.mail ?: {};
+		var headers = mail.headers      ?: [];
+		var result  = {};
 
-	private struct function _getSettings(){
-		if ( !request.keyExists( "_mailgunServiceProviderSettings" ) ) {
-			var settings = _getEmailServiceProviderService().getProviderSettings( "mailgun" );
-
-			request._mailgunServiceProviderSettings = {
-				  mailgun_api_key        = settings.mailgun_api_key        ?: ""
-				, mailgun_api_public_key = settings.mailgun_api_public_key ?: ""
-				, mailgun_default_domain = settings.mailgun_default_domain ?: ""
-				, mailgun_test_mode      = settings.mailgun_test_mode      ?: ""
-			};
+		for ( var header in headers ) {
+			result[ header.name ] = header.value;
 		}
 
-		return request._mailgunServiceProviderSettings;
+		return result;
 	}
 
-	public string function _hexEncodedSha256( required string data, required string key ) {
-		var secret = CreateObject( "java", "javax.crypto.spec.SecretKeySpec" ).Init( arguments.key.GetBytes(), "HmacSHA256" );
-		var mac    = createObject( "java", "javax.crypto.Mac" ).getInstance( "HmacSHA256" );
+	private any function _getMessageBytesToSign( required struct message ) {
 
-		mac.init( secret );
+	    if ( arguments.message.Type == "Notification" ) {
+	        return _buildNotificationStringToSign( arguments.message ).getBytes();
+	    }
 
-		return _byteArrayToHex( mac.doFinal( arguments.data.GetBytes() ) );
+	    if ( arguments.message.Type == "SubscriptionConfirmation" ) {
+	        return _buildSubscriptionStringToSign( arguments.message ).getBytes();
+	    }
 
+	    return nullValue();
 	}
 
-	public string function _byteArrayToHex( required any byteArray ) {
-		var hexBytes = [];
-		for( var byte in arguments.byteArray ) {
-			var unsignedByte = bitAnd( byte, 255 );
-			var hexChar      = FormatBaseN( unsignedByte, 16 );
+	//Build the string to sign for Notification messages.
+	private string function _buildNotificationStringToSign( required struct message ) {
 
-			if ( unsignedByte < 16 ) {
-				hexChar = "0" & hexChar;
-			}
-			hexBytes.append( hexChar );
-		}
+	    //Build the string to sign from the values in the message.
+	    //Name and values separated by newline characters
+	    //The name value pairs are sorted by name 
+	    //in byte sort order.
+	    var stringToSign = "";
 
-		return hexBytes.toList( "" );
+	    stringToSign &= "Message"                   & NL;
+        stringToSign &= arguments.message.Message   & NL;
+        stringToSign &= "MessageId"                 & NL;
+        stringToSign &= arguments.message.MessageId & NL;
+
+	    if ( arguments.message.keyExists( "Subject" ) && !isNull( arguments.message.Subject ) ) {
+	        stringToSign &= "Subject"                 & NL;
+	        stringToSign &= arguments.message.Subject & NL;
+	    }
+
+        stringToSign &= "Timestamp"                 & NL;
+        stringToSign &= arguments.message.Timestamp & NL;
+        stringToSign &= "TopicArn"                  & NL;
+        stringToSign &= arguments.message.TopicArn  & NL;
+        stringToSign &= "Type"                      & NL;
+        stringToSign &= arguments.message.Type      & NL;
+
+	    return stringToSign;
+	}
+
+	//Build the string to sign for SubscriptionConfirmation 
+	//and UnsubscribeConfirmation messages.
+	private string function _buildSubscriptionStringToSign( required struct message ) {
+	    //Build the string to sign from the values in the message.
+	    //Name and values separated by newline characters
+	    //The name value pairs are sorted by name 
+	    //in byte sort order.
+	    var stringToSign = "";
+
+	    stringToSign &= "Message"                      & NL;
+	    stringToSign &= arguments.message.Message      & NL;
+	    stringToSign &= "MessageId"                    & NL;
+	    stringToSign &= arguments.message.MessageId    & NL;
+	    stringToSign &= "SubscribeURL"                 & NL;
+	    stringToSign &= arguments.message.SubscribeURL & NL;
+	    stringToSign &= "Timestamp"                    & NL;
+	    stringToSign &= arguments.message.Timestamp    & NL;
+	    stringToSign &= "Token"                        & NL;
+	    stringToSign &= arguments.message.Token        & NL;
+	    stringToSign &= "TopicArn"                     & NL;
+	    stringToSign &= arguments.message.TopicArn     & NL;
+	    stringToSign &= "Type"                         & NL;
+	    stringToSign &= arguments.message.Type         & NL;
+
+	    return stringToSign;
 	}
 
 	private any function _getEmailServiceProviderService() {
@@ -221,12 +237,5 @@ component {
 	}
 	private void function _setEmailLoggingService( required any emailLoggingService ) {
 		_emailLoggingService = arguments.emailLoggingService;
-	}
-
-	private any function _getJavaLoader() {
-		return _javaLoader;
-	}
-	private void function _setJavaLoader( required any javaLoader ) {
-		_javaLoader = arguments.javaLoader;
 	}
 }
