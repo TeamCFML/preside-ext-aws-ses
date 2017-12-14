@@ -56,6 +56,10 @@ component {
 			//result.contentbytes = content.getBytes();
 
 			var objectMapper = _getJavaLoader().create( "com.fasterxml.jackson.databind.ObjectMapper" ).init();
+			var DeserializationFeature = _getJavaLoader().create( "com.fasterxml.jackson.databind.DeserializationFeature" );
+
+			objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
 	    	var Map = createObject( "java", "java.util.Map" );
 
 		    result.parsed = objectMapper.readValue( bytes, Map.getClass() );
