@@ -27,23 +27,38 @@ component {
 	}
 
 // PUBLIC API METHODS
-	public struct function decodeMessage( required any requestData ) {
+	public struct function decodeMessage( required any pc ) {
 
     	try {
 
-			var content = arguments.requestData.content ?: "";
-			var headers = arguments.requestData.headers ?: {};
+    		var result = {};
 
-			var result = { full=arguments.requestData, originalcontent=content, headers=headers };
+			var sr = arguments.pc.getHttpServletRequest();
 
-			result.luceejsoncontent = isJSON( content ) ? deserializeJSON( content ) : "";
+			var scanner = createObject( "java", "java.util.Scanner" ).init( sr.getInputStream() );
+			var builder = createObject( "java", "java.lang.StringBuilder" );
 
-			result.contentbytes = content.getBytes();
+		    while (scanner.hasNextLine()) {
+		        builder.append(scanner.nextLine());
+		    }
+
+		    result.sbstring = builder.toString();
+
+			var bytes = createObject( "java", "java.io.ByteArrayInputStream" ).init( result.sbstring.getBytes() );
+
+			//var content = arguments.requestData.content ?: "";
+			//var headers = arguments.requestData.headers ?: {};
+
+			//var result = { full=arguments.requestData, originalcontent=content, headers=headers };
+
+			//result.luceejsoncontent = isJSON( content ) ? deserializeJSON( content ) : "";
+
+			//result.contentbytes = content.getBytes();
 
 			var objectMapper = _getJavaLoader().create( "com.fasterxml.jackson.databind.ObjectMapper" ).init();
 	    	var Map = createObject( "java", "java.util.Map" );
 
-		    result.parsed = objectMapper.readValue( result.contentbytes, Map.getClass() );
+		    result.parsed = objectMapper.readValue( bytes, Map.getClass() );
 		} catch ( any e ) {
 			dumplogservice.dumplog(e=e, result=result);
 		}

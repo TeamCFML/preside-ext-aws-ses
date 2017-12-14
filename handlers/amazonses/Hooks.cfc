@@ -27,7 +27,7 @@ component {
 			content = deserializeJSON( content );
 		}
 
-		var decodedData = amazonSesNotificationsService.decodeMessage( data );
+		var decodedData = amazonSesNotificationsService.decodeMessage( getPageContext() );
 		dumplog( amazonses="hooks", content=content, headers=headers, decodedData=decodedData );
 
 		event.renderData( type="text", data="Notification of event received and processed", statuscode=200 );
