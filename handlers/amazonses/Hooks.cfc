@@ -4,7 +4,13 @@ component {
 
 	public void function index( event, rc, prc ) {
 
-		dumplog( amazonses="hooks", r=getHTTPRequestData() );
+		var data = getHTTPRequestData();
+		var content = data.content ?: "";
+		var headers = data.headers ?: {};
+		if ( isJSON( content ) ) {
+			content = deserializeJSON( content );
+		}
+		dumplog( amazonses="hooks", content=content, headers=headers );
 		return;
 
 		// deliberate use of form scope here. DO NOT CHANGE.
