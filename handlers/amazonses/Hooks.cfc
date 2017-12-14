@@ -15,14 +15,14 @@ component {
 		dumplog( messageType=messageType );
 
 		if ( isEmpty( messageType ) ) {
-			event.renderData( type="text", data="Not acceptable: empty message type", statusCode=406 );
 			dumplog( hookerror="Not acceptable: empty message type" );
+			event.renderData( type="text", data="Not acceptable: empty message type", statusCode=406 );
 		 	return;
 		}
 
 		if ( !VALID_MESSAGE_TYPES.findNoCase( messageType ) ) {
-			event.renderData( type="text", data="Not acceptable: unknown message type '#messageType#'", statusCode=406 );
 			dumplog( hookerror="Not acceptable: unknown message type '#messageType#'" );
+			event.renderData( type="text", data="Not acceptable: unknown message type '#messageType#'", statusCode=406 );
 		 	return;
 		}
 
@@ -31,14 +31,14 @@ component {
 		dumplog( message=message );
 
 		if ( isEmpty( message ) ) {
-			event.renderData( type="text", data="Not acceptable: empty or not parsable message content", statusCode=406 );
 			dumplog( hookerror="Not acceptable: empty or not parsable message content" );
+			event.renderData( type="text", data="Not acceptable: empty or not parsable message content", statusCode=406 );
 		 	return;
 		}
 
 		if ( !amazonSesNotificationsService.isMessageSignatureValid( message ) ) {
-			event.renderData( type="text", data="Not acceptable: invalid message signature", statusCode=406 );
 			dumplog( hookerror="Not acceptable: invalid message signature" );
+			event.renderData( type="text", data="Not acceptable: invalid message signature", statusCode=406 );
 		 	return;
 		}
 
@@ -49,8 +49,8 @@ component {
 			dumplog( presideMessageId=presideMessageId );
 
 			if ( isEmpty( presideMessageId ) ) {
-				event.renderData( type="text", data="Not acceptable: could not identify source preside message", statusCode=406 );
 				dumplog( hookerror="Not acceptable: could not identify source preside message" );
+				event.renderData( type="text", data="Not acceptable: could not identify source preside message", statusCode=406 );
 				return;
 			}
 
@@ -59,14 +59,14 @@ component {
 				, notification = notification
 			);
 
-			event.renderData( type="text", data="Notification received and processed for preside message [#presideMessageId#]", statuscode=200 );
 			dumplog( hooksuccess="Notification received and processed for preside message [#presideMessageId#]" );
+			event.renderData( type="text", data="Notification received and processed for preside message [#presideMessageId#]", statuscode=200 );
 		}
 		else {
 			// messageType == "SubscriptionConfirmation"
 			amazonSesNotificationsService.confirmSubscription( message );
-			event.renderData( type="text", data="Notification subscription confirmed.", statuscode=200 );
 			dumplog( hooksuccess="Notification subscription confirmed." );
+			event.renderData( type="text", data="Notification subscription confirmed.", statuscode=200 );
 		}
 	}
 }
