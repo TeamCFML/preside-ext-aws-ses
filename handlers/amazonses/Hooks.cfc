@@ -23,12 +23,20 @@ component {
 
 		}
 
+		content = replaceList( content, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
+		content = replace( content, "}=", "}", "all" );
+		content = replace( content, "{=", "{", "all" );
+		content = replace( content, '",=', '",', "all" );
+		content = replace( content, '"=', '"', "all" );
+
+		var deserializedContent = "";
+
 		if ( isJSON( content ) ) {
-			content = deserializeJSON( content );
+			deserializedContent = deserializeJSON( content );
 		}
 
-		var decodedData = amazonSesNotificationsService.decodeMessage( getPageContext() );
-		dumplog( amazonses="hooks", content=content, headers=headers, decodedData=decodedData );
+		//var decodedData = amazonSesNotificationsService.decodeMessage( getPageContext() );
+		dumplog( amazonses="hooks", content=content, headers=headers, messageType=messageType, deserializedContent=deserializedContent );
 
 		event.renderData( type="text", data="Notification of event received and processed", statuscode=200 );
 
