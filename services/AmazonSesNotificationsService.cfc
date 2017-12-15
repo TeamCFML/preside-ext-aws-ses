@@ -86,12 +86,11 @@ component {
 
 	        sig.update( messageBytesToSign );
 
-	        //var Base64 = createObject( "java", "java.util.Base64" );
-	        var base64Signature = toBase64( signature );
+	        var base64Decoder = createObject( "java", "java.util.Base64" ).getDecoder();
 	        
-			var result = sig.verify( base64Signature );
+			var result = sig.verify( base64Decoder.decode( toString( signature ) ) );
 
-			dumplogservice.dumplog( ses="isMessageSignatureValid", base64Signature=base64Signature, result=result, messageBytesToSign=messageBytesToSign );
+			dumplogservice.dumplog( ses="isMessageSignatureValid", result=result, messageBytesToSign=messageBytesToSign );
 
 	        return result;
 	    }
