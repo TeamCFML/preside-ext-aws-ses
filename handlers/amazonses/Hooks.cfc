@@ -12,7 +12,7 @@ component {
 
 		var messageType = headers[ "x-amz-sns-message-type" ] ?: "";
 
-		dumplog( messageType=messageType );
+		dumplog( messageType=messageType, data=data );
 
 		if ( isEmpty( messageType ) ) {
 			dumplog( hookerror="Not acceptable: empty message type" );
