@@ -64,6 +64,10 @@ component {
 		}
 
 	    try {
+	    	signingCertURL = _fixEncodedString( signingCertURL );
+			
+			dumplogservice.dumplog( ses="isMessageSignatureValid", signatureVersion=signatureVersion, signingCertURL=signingCertURL, signature=signature );
+
 	        var javaUrl = createObject( "java", "java.net.URL" ).init( signingCertURL );
 
 	        var inStream           = javaUrl.openStream();
@@ -82,12 +86,12 @@ component {
 
 	        sig.update( messageBytesToSign );
 
-	        var Base64 = createObject( "java", "java.util.Base64" );
-	        var decodedSignature = Base64.getDecoder().decode( signature );
+	        //var Base64 = createObject( "java", "java.util.Base64" );
+	        var base64Signature = toBase64( signature );
 	        
-			var result = sig.verify( decodedSignature );
+			var result = sig.verify( base64Signature );
 
-			dumplogservice.dumplog( ses="isMessageSignatureValid", decodedSignature=decodedSignature, result=result, messageBytesToSign=messageBytesToSign );
+			dumplogservice.dumplog( ses="isMessageSignatureValid", base64Signature=base64Signature, result=result, messageBytesToSign=messageBytesToSign );
 
 	        return result;
 	    }
@@ -102,7 +106,7 @@ component {
 
 		// the message content within the SNS wrapper message is again JSON serialized
 		if ( arguments.message.keyExists( "Message" ) && isJSON( arguments.message.Message ) ) {
-			arguments.message.Message = replaceList( arguments.message.Message, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
+			arguments.message.Message = _fixEncodedString( arguments.message.Message );
 			return deserializeJSON( arguments.message.Message );
 		}
 
@@ -144,10 +148,9 @@ component {
 		var subscribeURL = trim( arguments.message.SubscribeURL ?: "" );
 
 		if ( len( subscribeURL ) ) {
-			subscribeURL = replaceList( subscribeURL, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
 			var httpService = new http(
 	              method  = "get"
-	            , url     = subscribeURL
+	            , url     = _fixEncodedString( subscribeURL )
 	            , timeout = 60
 	        ); 
 
@@ -236,6 +239,10 @@ component {
 	    stringToSign &= arguments.message.Type         & NL;
 
 	    return stringToSign;
+	}
+
+	private string function _fixEncodedString( required string s ) {
+		return replaceList( arguments.s, "&lt;,&gt;,&amp;,&quot", '<,>,&,"' );
 	}
 
 	private any function _getEmailServiceProviderService() {
